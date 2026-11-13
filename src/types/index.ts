@@ -45,6 +45,8 @@ export interface IntelligenceRecord {
   attachments?: Attachment[];
   statusSumber: 'lengkap' | 'sumber_belum_dilengkapi';
   isDemo?: boolean;             // Explicit DEMO DATA indicator
+  bhiNo?: number | null;        // Permanent BHI sequential number
+  bhi_no?: number | null;
   createdAt: string;
   updatedAt: string;
 }

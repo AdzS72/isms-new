@@ -81,6 +81,8 @@ export function mapRowToRecord(row: any): IntelligenceRecord {
         : [],
     statusSumber: row.status_sumber || row.statusSumber || 'lengkap',
     isDemo: Boolean(row.is_demo ?? row.isDemo ?? false),
+    bhiNo: row.bhi_no != null ? Number(row.bhi_no) : (row.bhiNo != null ? Number(row.bhiNo) : null),
+    bhi_no: row.bhi_no != null ? Number(row.bhi_no) : (row.bhiNo != null ? Number(row.bhiNo) : null),
     createdAt: row.created_at || row.createdAt || new Date().toISOString(),
     updatedAt: row.updated_at || row.updatedAt || new Date().toISOString(),
   };
@@ -103,6 +105,7 @@ export function mapRecordToRow(record: Partial<IntelligenceRecord> & { id: strin
     attachments: Array.isArray(record.attachments) ? record.attachments : [],
     status_sumber: record.statusSumber || 'lengkap',
     is_demo: Boolean(record.isDemo),
+    bhi_no: record.bhiNo ?? record.bhi_no ?? null,
     created_at: record.createdAt || now,
     updated_at: record.updatedAt || now,
   };
