@@ -250,7 +250,7 @@ export async function buatBhi(
       const row = barisBhi(orderedRecords[index], cfg, index + 1, map);
       dataRows.push(barisTabelBhi(row, index, orderedRecords.length, cfg));
     }
-    onProgress?.(end, orderedRecords.length);
+    onProgress?.(end, orderedRecords.length, 'rows');
     if (end < orderedRecords.length) await yieldToBrowser();
   }
 

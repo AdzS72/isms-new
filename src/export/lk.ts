@@ -208,7 +208,7 @@ export async function buatLk(
         dataRows.push(barisTabelLk(group.records[index], index, group.records.length, cfg, bhiMap));
       }
       completed += end - start;
-      onProgress?.(completed, total);
+      onProgress?.(completed, total, 'rows');
       if (completed >= nextYield && completed < total) {
         await yieldToBrowser();
         nextYield = completed + EXPORT_BATCH_SIZE;
