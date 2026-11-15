@@ -34,6 +34,12 @@ import { IntelligenceRecord, StrategicComponent, Continent } from '../../types';
 import { parseTokohList, normalizeMultipleTokoh } from '../../utils/tokohUtils';
 import * as XLSX from 'xlsx';
 
+const ExportBhiLkModal = React.lazy(() =>
+  import('./ExportBhiLkModal').then(({ ExportBhiLkModal }) => ({
+    default: ExportBhiLkModal,
+  }))
+);
+
 export const LihatDataView: React.FC = () => {
   const {
     filteredRecords,
@@ -68,6 +74,7 @@ export const LihatDataView: React.FC = () => {
   // Checkbox Selection & Bulk Actions State
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false);
+  const [isExportDocxModalOpen, setIsExportDocxModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
   const showToast = (type: 'success' | 'error' | 'info', text: string) => {
@@ -334,6 +341,15 @@ export const LihatDataView: React.FC = () => {
           >
             <Download className="w-4 h-4" />
             Ekspor Excel ({filteredRecords.length})
+          </button>
+
+          <button
+            onClick={() => setIsExportDocxModalOpen(true)}
+            className="px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+            title="Ekspor Dokumen Buku Harian Intelijen (BHI) dan Lembaran Kerja (LK) ke format Word (.docx)"
+          >
+            <FileText className="w-4 h-4" />
+            <span>Ekspor BHI & LK (.docx)</span>
           </button>
         </div>
       </div>
@@ -1413,6 +1429,29 @@ export const LihatDataView: React.FC = () => {
             ✕
           </button>
         </div>
+      )}
+      {/* 11. MODAL EKSPOR BHI & LK (.DOCX) */}
+      {isExportDocxModalOpen && (
+        <React.Suspense
+          fallback={
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+              role="status"
+              aria-live="polite"
+            >
+              <div className="rounded-xl bg-white px-6 py-4 text-sm font-medium text-slate-700 shadow-xl">
+                Memuat fitur ekspor BHI &amp; LK...
+              </div>
+            </div>
+          }
+        >
+          <ExportBhiLkModal
+            isOpen={isExportDocxModalOpen}
+            onClose={() => setIsExportDocxModalOpen(false)}
+            initialRecords={filteredRecords}
+            selectedRecords={filteredRecords.filter((r) => selectedIds.has(r.id))}
+          />
+        </React.Suspense>
       )}
     </div>
   );
