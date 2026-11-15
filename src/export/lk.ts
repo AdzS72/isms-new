@@ -190,7 +190,7 @@ export async function buatLk(
   ttd: Penandatangan,
   cfg: ExportConfig = CONFIG_BAWAAN,
   bhiNumberMap?: Map<string, number>,
-  onProgress?: (completed: number, total: number) => void,
+  onProgress?: (completed: number, total: number, stage: 'rows' | 'packing') => void,
   kelompokSiap?: KelompokLk[]
 ): Promise<Blob> {
   const bhiMap = bhiNumberMap || buatBhiNumberMap(records);
@@ -218,5 +218,7 @@ export async function buatLk(
   }
 
   const doc = dokumenLk(kelompok, tabel, ttd, cfg);
+  onProgress?.(total, total, 'packing');
+  await yieldToBrowser();
   return await Packer.toBlob(doc);
 }

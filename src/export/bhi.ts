@@ -238,7 +238,7 @@ export async function buatBhi(
   ttd: Penandatangan,
   cfg: ExportConfig = CONFIG_BAWAAN,
   bhiNumberMap?: Map<string, number>,
-  onProgress?: (completed: number, total: number) => void
+  onProgress?: (completed: number, total: number, stage: 'rows' | 'packing') => void
 ): Promise<Blob> {
   const map = bhiNumberMap || buatBhiNumberMap(records);
   const orderedRecords = urutkanBhi(records, map);
@@ -255,5 +255,7 @@ export async function buatBhi(
   }
 
   const doc = dokumenBhiDariBaris(dataRows, ttd, cfg);
+  onProgress?.(orderedRecords.length, orderedRecords.length, 'packing');
+  await yieldToBrowser();
   return await Packer.toBlob(doc);
 }

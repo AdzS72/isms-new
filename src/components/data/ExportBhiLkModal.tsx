@@ -57,6 +57,49 @@ interface ExportBhiLkModalProps {
   selectedRecords?: any[];
 }
 
+const exportBlobCache = new Map<string, Blob>();
+const MAX_CACHED_EXPORTS = 4;
+
+function exportCacheKey(
+  type: 'BHI' | 'LK',
+  records: IntelRecord[],
+  signer: Penandatangan,
+  config: ExportConfig,
+  bhiNumberMap: Map<string, number>
+): string {
+  const recordNumbers = records.map((record) => [
+    record.id,
+    nomorBhi(record, undefined, bhiNumberMap),
+  ]);
+  return JSON.stringify([
+    type,
+    new Date().toISOString().slice(0, 10),
+    records,
+    recordNumbers,
+    signer,
+    config,
+  ]);
+}
+
+function getCachedExport(key: string): Blob | undefined {
+  const blob = exportBlobCache.get(key);
+  if (blob) {
+    exportBlobCache.delete(key);
+    exportBlobCache.set(key, blob);
+  }
+  return blob;
+}
+
+function cacheExport(key: string, blob: Blob): void {
+  exportBlobCache.delete(key);
+  exportBlobCache.set(key, blob);
+  while (exportBlobCache.size > MAX_CACHED_EXPORTS) {
+    const oldestKey = exportBlobCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    exportBlobCache.delete(oldestKey);
+  }
+}
+
 export const ExportBhiLkModal: React.FC<ExportBhiLkModalProps> = ({
   isOpen,
   onClose,
@@ -111,6 +154,7 @@ export const ExportBhiLkModal: React.FC<ExportBhiLkModalProps> = ({
   // State Eksekusi & Feedback
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState('');
+  const [exportProgress, setExportProgress] = useState(0);
   const [exportSuccessMessage, setExportSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeTabPreview, setActiveTabPreview] = useState<'ringkasan' | 'lk-kelompok' | 'bhi-preview'>('ringkasan');
@@ -345,10 +389,32 @@ export const ExportBhiLkModal: React.FC<ExportBhiLkModalProps> = ({
     return true;
   };
 
+  const updateExportProgress = (
+    label: 'BHI' | 'LK',
+    completed: number,
+    total: number,
+    stage: 'rows' | 'packing',
+    offset = 0,
+    scale = 1
+  ) => {
+    const stageProgress = stage === 'packing'
+      ? 95
+      : total > 0
+      ? Math.round((completed / total) * 90)
+      : 0;
+    setExportProgress(Math.min(100, Math.round(offset + stageProgress * scale)));
+    setExportStatus(
+      stage === 'packing'
+        ? `Menyimpan dokumen ${label}...`
+        : `Menyusun ${label} ${completed.toLocaleString('id-ID')}/${total.toLocaleString('id-ID')}`
+    );
+  };
+
   // Eksekusi Ekspor BHI
   const handleExportBhi = async () => {
     if (!validateSigner()) return;
     setIsExporting(true);
+    setExportProgress(0);
     setExportStatus('Menyiapkan dokumen BHI...');
     setErrorMessage(null);
     setExportSuccessMessage(null);
@@ -369,13 +435,27 @@ export const ExportBhiLkModal: React.FC<ExportBhiLkModalProps> = ({
         ].filter(Boolean),
       };
 
-      const blob = await buatBhi(
+      const key = exportCacheKey(
+        'BHI',
         finalRecordsToExport,
         penandatangan,
         currentExportConfig,
-        bhiNumberMap,
-        (completed, total) => setExportStatus(`Menyusun BHI ${completed.toLocaleString('id-ID')}/${total.toLocaleString('id-ID')}`)
+        bhiNumberMap
       );
+      let blob = getCachedExport(key);
+      if (!blob) {
+        blob = await buatBhi(
+          finalRecordsToExport,
+          penandatangan,
+          currentExportConfig,
+          bhiNumberMap,
+          (completed, total, stage) => updateExportProgress('BHI', completed, total, stage)
+        );
+        cacheExport(key, blob);
+      } else {
+        setExportProgress(100);
+        setExportStatus('Menggunakan dokumen BHI dari cache...');
+      }
       const dateStr = format(new Date(), 'yyyy-MM-dd_HHmm');
       const filename = `BHI_Buku_Harian_Intelijen_${dateStr}.docx`;
 
@@ -387,6 +467,7 @@ export const ExportBhiLkModal: React.FC<ExportBhiLkModalProps> = ({
     } finally {
       setIsExporting(false);
       setExportStatus('');
+      setExportProgress(0);
     }
   };
 
@@ -394,6 +475,7 @@ export const ExportBhiLkModal: React.FC<ExportBhiLkModalProps> = ({
   const handleExportLk = async () => {
     if (!validateSigner()) return;
     setIsExporting(true);
+    setExportProgress(0);
     setExportStatus('Menyiapkan dokumen LK...');
     setErrorMessage(null);
     setExportSuccessMessage(null);
@@ -408,14 +490,28 @@ export const ExportBhiLkModal: React.FC<ExportBhiLkModalProps> = ({
         bulanTahun: bulanTahunPenandatangan.trim() || undefined,
       };
 
-      const blob = await buatLk(
+      const key = exportCacheKey(
+        'LK',
         finalRecordsToExport,
         penandatangan,
         currentExportConfig,
-        bhiNumberMap,
-        (completed, total) => setExportStatus(`Menyusun LK ${completed.toLocaleString('id-ID')}/${total.toLocaleString('id-ID')}`),
-        previewKelompokLk
+        bhiNumberMap
       );
+      let blob = getCachedExport(key);
+      if (!blob) {
+        blob = await buatLk(
+          finalRecordsToExport,
+          penandatangan,
+          currentExportConfig,
+          bhiNumberMap,
+          (completed, total, stage) => updateExportProgress('LK', completed, total, stage),
+          previewKelompokLk
+        );
+        cacheExport(key, blob);
+      } else {
+        setExportProgress(100);
+        setExportStatus('Menggunakan dokumen LK dari cache...');
+      }
       const dateStr = format(new Date(), 'yyyy-MM-dd_HHmm');
       const filename = `LK_Lembaran_Kerja_${previewKelompokLk.length}_Kelompok_${dateStr}.docx`;
 
@@ -427,6 +523,7 @@ export const ExportBhiLkModal: React.FC<ExportBhiLkModalProps> = ({
     } finally {
       setIsExporting(false);
       setExportStatus('');
+      setExportProgress(0);
     }
   };
 
@@ -434,6 +531,7 @@ export const ExportBhiLkModal: React.FC<ExportBhiLkModalProps> = ({
   const handleExportBoth = async () => {
     if (!validateSigner()) return;
     setIsExporting(true);
+    setExportProgress(0);
     setExportStatus('Menyiapkan dokumen BHI...');
     setErrorMessage(null);
     setExportSuccessMessage(null);
@@ -460,35 +558,66 @@ export const ExportBhiLkModal: React.FC<ExportBhiLkModalProps> = ({
           jabatanPenandatangan.trim(),
         ].filter(Boolean),
       };
-      const bhiBlob = await buatBhi(
+      const bhiKey = exportCacheKey(
+        'BHI',
         finalRecordsToExport,
         penandatanganBhi,
         currentExportConfig,
-        bhiNumberMap,
-        (completed, total) => setExportStatus(`Menyusun BHI ${completed.toLocaleString('id-ID')}/${total.toLocaleString('id-ID')}`)
+        bhiNumberMap
       );
+      let bhiBlob = getCachedExport(bhiKey);
+      if (!bhiBlob) {
+        bhiBlob = await buatBhi(
+          finalRecordsToExport,
+          penandatanganBhi,
+          currentExportConfig,
+          bhiNumberMap,
+          (completed, total, stage) => updateExportProgress('BHI', completed, total, stage, 0, 0.5)
+        );
+        cacheExport(bhiKey, bhiBlob);
+      } else {
+        setExportProgress(50);
+        setExportStatus('Menggunakan dokumen BHI dari cache...');
+      }
       unduhBlob(bhiBlob, `BHI_Buku_Harian_Intelijen_${dateStr}.docx`);
       setExportStatus('Menyiapkan dokumen LK...');
 
       // 2. Ekspor LK dengan jeda singkat agar browser tidak memblokir multi-download
       setTimeout(async () => {
         try {
-          const lkBlob = await buatLk(
+          const lkKey = exportCacheKey(
+            'LK',
             finalRecordsToExport,
             penandatangan,
             currentExportConfig,
-            bhiNumberMap,
-            (completed, total) => setExportStatus(`Menyusun LK ${completed.toLocaleString('id-ID')}/${total.toLocaleString('id-ID')}`),
-            previewKelompokLk
+            bhiNumberMap
           );
+          let lkBlob = getCachedExport(lkKey);
+          if (!lkBlob) {
+            lkBlob = await buatLk(
+              finalRecordsToExport,
+              penandatangan,
+              currentExportConfig,
+              bhiNumberMap,
+              (completed, total, stage) =>
+                updateExportProgress('LK', completed, total, stage, 50, 0.5),
+              previewKelompokLk
+            );
+            cacheExport(lkKey, lkBlob);
+          } else {
+            setExportProgress(100);
+            setExportStatus('Menggunakan dokumen LK dari cache...');
+          }
           unduhBlob(lkBlob, `LK_Lembaran_Kerja_${previewKelompokLk.length}_Kelompok_${dateStr}.docx`);
           setExportSuccessMessage('Kedua dokumen (BHI & LK) berhasil dibuat dan diunduh secara berurutan.');
           setIsExporting(false);
           setExportStatus('');
+          setExportProgress(0);
         } catch (lkErr: any) {
           setErrorMessage(`Gagal membuat LK: ${lkErr.message}`);
           setIsExporting(false);
           setExportStatus('');
+          setExportProgress(0);
         }
       }, 700);
     } catch (err: any) {
@@ -496,6 +625,7 @@ export const ExportBhiLkModal: React.FC<ExportBhiLkModalProps> = ({
       setErrorMessage(`Gagal memproses ekspor: ${err.message || 'Terjadi kesalahan sistem'}`);
       setIsExporting(false);
       setExportStatus('');
+      setExportProgress(0);
     }
   };
 
@@ -1081,54 +1211,77 @@ export const ExportBhiLkModal: React.FC<ExportBhiLkModalProps> = ({
         </div>
 
         {/* Modal Footer with Actions */}
-        <div className="bg-slate-50 px-6 py-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="text-xs text-slate-500 flex items-center gap-2">
-            <Shield className="w-4 h-4 text-emerald-600" />
-            <span>Dokumen dihasilkan secara client-side murni tanpa transmisi keluar.</span>
-          </div>
+        <div className="bg-slate-50 px-6 py-4 border-t border-slate-200">
+          {isExporting && (
+            <div className="mb-4" role="status" aria-live="polite">
+              <div className="mb-1.5 flex items-center justify-between text-xs text-slate-600">
+                <span>{exportStatus}</span>
+                <span>{exportProgress}%</span>
+              </div>
+              <div
+                className="h-2 overflow-hidden rounded-full bg-slate-200"
+                role="progressbar"
+                aria-label="Progress ekspor BHI dan LK"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={exportProgress}
+              >
+                <div
+                  className="h-full rounded-full bg-blue-600 transition-all duration-200"
+                  style={{ width: `${exportProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="text-xs text-slate-500 flex items-center gap-2">
+              <Shield className="w-4 h-4 text-emerald-600" />
+              <span>Dokumen dihasilkan secara client-side murni tanpa transmisi keluar.</span>
+            </div>
 
-          <div className="flex items-center flex-wrap gap-2.5 w-full sm:w-auto justify-end">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isExporting}
-              className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold text-xs transition-colors cursor-pointer"
-            >
-              Tutup
-            </button>
+            <div className="flex items-center flex-wrap gap-2.5 w-full sm:w-auto justify-end">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isExporting}
+                className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold text-xs transition-colors cursor-pointer"
+              >
+                Tutup
+              </button>
 
-            {/* Tombol Ekspor BHI */}
-            <button
-              type="button"
-              onClick={handleExportBhi}
-              disabled={isExporting || finalRecordsToExport.length === 0}
-              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
-            >
-              <FileText className="w-4 h-4" />
-              <span>{isExporting && exportStatus.includes('BHI') ? exportStatus : 'Ekspor BHI (.docx)'}</span>
-            </button>
+              {/* Tombol Ekspor BHI */}
+              <button
+                type="button"
+                onClick={handleExportBhi}
+                disabled={isExporting || finalRecordsToExport.length === 0}
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <FileText className="w-4 h-4" />
+                <span>{isExporting && exportStatus.includes('BHI') ? exportStatus : 'Ekspor BHI (.docx)'}</span>
+              </button>
 
-            {/* Tombol Ekspor LK */}
-            <button
-              type="button"
-              onClick={handleExportLk}
-              disabled={isExporting || finalRecordsToExport.length === 0}
-              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
-            >
-              <BookOpen className="w-4 h-4" />
-              <span>{isExporting && exportStatus.includes('LK') ? exportStatus : 'Ekspor LK (.docx)'}</span>
-            </button>
+              {/* Tombol Ekspor LK */}
+              <button
+                type="button"
+                onClick={handleExportLk}
+                disabled={isExporting || finalRecordsToExport.length === 0}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <BookOpen className="w-4 h-4" />
+                <span>{isExporting && exportStatus.includes('LK') ? exportStatus : 'Ekspor LK (.docx)'}</span>
+              </button>
 
-            {/* Tombol Ekspor Keduanya */}
-            <button
-              type="button"
-              onClick={handleExportBoth}
-              disabled={isExporting || finalRecordsToExport.length === 0}
-              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
-            >
-              <Download className="w-4 h-4" />
-              <span>{isExporting ? exportStatus || 'Memproses Dokumen...' : 'Ekspor Keduanya (BHI & LK)'}</span>
-            </button>
+              {/* Tombol Ekspor Keduanya */}
+              <button
+                type="button"
+                onClick={handleExportBoth}
+                disabled={isExporting || finalRecordsToExport.length === 0}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <Download className="w-4 h-4" />
+                <span>{isExporting ? exportStatus || 'Memproses Dokumen...' : 'Ekspor Keduanya (BHI & LK)'}</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
